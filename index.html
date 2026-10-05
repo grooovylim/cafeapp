@@ -82,6 +82,21 @@
       background: #555;
     }
 
+    button:disabled {
+      background: #aaa;
+      cursor: not-allowed;
+    }
+
+    .status {
+      text-align: center;
+      color: #666;
+      padding: 20px 0;
+    }
+
+    .error {
+      color: #b00020;
+    }
+
     .bill {
       margin-top: 25px;
       padding-top: 20px;
@@ -113,9 +128,13 @@
     <h1>☕ Café Bill Calculator</h1>
     <p class="subtitle">Select the quantity for each item</p>
 
-    <div id="menu"></div>
+    <div id="menu">
+      <div class="status">Loading menu...</div>
+    </div>
 
-    <button onclick="calculateBill()">Calculate Bill</button>
+    <button id="calculateButton" onclick="calculateBill()" disabled>
+      Calculate Bill
+    </button>
 
     <div class="bill" id="bill">
       <h2>Your Bill</h2>
@@ -130,33 +149,93 @@
   </div>
 
   <script>
-    const menu = [
-      { name: "Chicken Rice", price: 4.50 },
-      { name: "Nasi Lemak", price: 4.00 },
-      { name: "Laksa", price: 5.00 },
-      { name: "Kopi", price: 1.50 },
-      { name: "Teh", price: 1.30 },
-      { name: "Milo", price: 2.00 }
-    ];
+    let menu = [];
 
-    const menuContainer = document.getElementById("menu");
+    async function loadMenu() {
+      const menuContainer = document.getElementById("menu");
+      const calculateButton = document.getElementById("calculateButton");
 
-    menu.forEach((item, index) => {
-      menuContainer.innerHTML += `
-        <div class="item">
-          <div class="item-name">${item.name}</div>
-          <div class="price">$${item.price.toFixed(2)}</div>
+      try {
+        const response = await fetch("menu.csv");
+
+        if (!response.ok) {
+          throw new Error("Unable to load menu.csv");
+        }
+
+        const csvText = await response.text();
+
+        menu = parseCSV(csvText);
+
+        if (menu.length === 0) {
+          throw new Error("No menu items found.");
+        }
+
+        renderMenu();
+        calculateButton.disabled = false;
+
+      } catch (error) {
+        menuContainer.innerHTML = `
+          <div class="status error">
+            Unable to load the menu.
+          </div>
+        `;
+
+        console.error(error);
+      }
+    }
+
+    function parseCSV(csvText) {
+      const lines = csvText
+        .trim()
+        .split(/\r?\n/);
+
+      // Remove the header row.
+      return lines
+        .slice(1)
+        .map(line => {
+          const parts = line.split(",");
+
+          return {
+            name: parts[0].trim(),
+            price: parseFloat(parts[1])
+          };
+        })
+        .filter(item =>
+          item.name &&
+          !isNaN(item.price)
+        );
+    }
+
+    function renderMenu() {
+      const menuContainer = document.getElementById("menu");
+
+      menuContainer.innerHTML = "";
+
+      menu.forEach((item, index) => {
+        const itemElement = document.createElement("div");
+
+        itemElement.className = "item";
+
+        itemElement.innerHTML = `
+          <div class="item-name">${escapeHTML(item.name)}</div>
+
+          <div class="price">
+            $${item.price.toFixed(2)}
+          </div>
+
           <input
             type="number"
             id="qty-${index}"
             min="0"
             step="1"
             value="0"
-            aria-label="${item.name} quantity"
+            aria-label="${escapeHTML(item.name)} quantity"
           >
-        </div>
-      `;
-    });
+        `;
+
+        menuContainer.appendChild(itemElement);
+      });
+    }
 
     function calculateBill() {
       let total = 0;
@@ -164,19 +243,28 @@
 
       menu.forEach((item, index) => {
         const input = document.getElementById(`qty-${index}`);
-        const quantity = Math.max(0, parseInt(input.value) || 0);
 
-        // Keep displayed quantity consistent with calculation.
+        const quantity = Math.max(
+          0,
+          parseInt(input.value) || 0
+        );
+
         input.value = quantity;
 
         if (quantity > 0) {
           const subtotal = item.price * quantity;
+
           total += subtotal;
 
           billHTML += `
             <div class="bill-row">
-              <span>${item.name} × ${quantity}</span>
-              <span>$${subtotal.toFixed(2)}</span>
+              <span>
+                ${escapeHTML(item.name)} × ${quantity}
+              </span>
+
+              <span>
+                $${subtotal.toFixed(2)}
+              </span>
             </div>
           `;
         }
@@ -192,9 +280,20 @@
       }
 
       document.getElementById("billItems").innerHTML = billHTML;
-      document.getElementById("total").textContent = `$${total.toFixed(2)}`;
+
+      document.getElementById("total").textContent =
+        `$${total.toFixed(2)}`;
+
       document.getElementById("bill").style.display = "block";
     }
+
+    function escapeHTML(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    loadMenu();
   </script>
 
 </body>
